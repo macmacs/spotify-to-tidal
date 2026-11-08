@@ -71,11 +71,3 @@ Run the tests from the project root with:
 ```bash
 python3 -m pytest
 ```
-
----
-
-#### Join our amazing community as a code contributor
-<br><br>
-<a href="https://github.com/spotify2tidal/spotify_to_tidal/graphs/contributors">
-  <img class="dark-light" src="https://contrib.rocks/image?repo=spotify2tidal/spotify_to_tidal&anon=0&columns=25&max=100&r=true" />
-</a>
