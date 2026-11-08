@@ -64,6 +64,14 @@ Generated files
 
 These files and your config files are ignored by git, so your credentials stay out of the repository.
 
+Development
+----
+Run the tests from the project root with:
+
+```bash
+python3 -m pytest
+```
+
 ---
 
 #### Join our amazing community as a code contributor
