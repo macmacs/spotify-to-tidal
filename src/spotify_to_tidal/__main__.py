@@ -1,22 +1,10 @@
-import yaml
 import argparse
 import sys
 
 from . import sync as _sync
 from . import auth as _auth
-from . import cache as _cache
+from .profile import Profile
 from .track_resolution import TidalSessionCatalogue, TrackResolver
-
-def get_user_specific_filename(base_filename: str, username: str = None) -> str:
-    """Generate user-specific filename with .username suffix before extension"""
-    if username is None:
-        return base_filename
-    
-    if '.' in base_filename:
-        name, ext = base_filename.rsplit('.', 1)
-        return f"{name}.{username}.{ext}"
-    else:
-        return f"{base_filename}.{username}"
 
 def main():
     parser = argparse.ArgumentParser()
@@ -26,26 +14,20 @@ def main():
     parser.add_argument('--sync-favorites', action=argparse.BooleanOptionalAction, help='synchronize the favorites')
     args = parser.parse_args()
 
-    # Use user-specific config file if --user is provided
-    if args.user:
-        config_file = get_user_specific_filename(args.config, args.user)
-    else:
-        config_file = args.config
+    profile = Profile(user=args.user, config_path=args.config)
+    config = profile.load_config()
 
-    with open(config_file, 'r') as f:
-        config = yaml.safe_load(f)
-    
     print("Opening Spotify session")
     spotify_session = _auth.open_spotify_session(config['spotify'])
     print("Opening Tidal session")
-    tidal_session = _auth.open_tidal_session(username=args.user)
+    tidal_session = _auth.open_tidal_session(session_file=profile.tidal_session_file)
     if not tidal_session.check_login():
         sys.exit("Could not connect to Tidal")
     resolver = TrackResolver(TidalSessionCatalogue(tidal_session),
-                             failure_cache=_cache.MatchFailureDatabase(username=args.user),
+                             failure_cache=profile.open_failure_cache(),
                              rate_limit=config.get('rate_limit', 10),
                              max_concurrency=config.get('max_concurrency', 10))
-    report_file = get_user_specific_filename("songs not found.txt", args.user)
+    report_file = profile.not_found_report_file
     if args.uri:
         # if a playlist ID is explicitly provided as a command line argument then use that
         spotify_playlist = spotify_session.playlist(args.uri)

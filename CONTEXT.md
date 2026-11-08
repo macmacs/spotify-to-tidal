@@ -4,6 +4,12 @@ Copies a user's Spotify playlists and favorites into their Tidal account, matchi
 
 ## Language
 
+### Profiles
+
+**Profile**:
+One person's own config, Tidal login, match failures and not-found report, kept apart from every other profile on the same machine. The default profile has no name.
+_Avoid_: user, account (both clash with Spotify and Tidal accounts)
+
 ### Syncing
 
 **Sync**:
