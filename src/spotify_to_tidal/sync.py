@@ -6,18 +6,13 @@ import datetime
 from difflib import SequenceMatcher
 from functools import partial
 from typing import Callable, List, Sequence, Set, Mapping
-import math
-import requests
-import sys
 import spotipy
 import tidalapi
 from .tidalapi_patch import add_multiple_tracks_to_playlist, clear_tidal_playlist, get_all_favorites, get_all_playlists, get_all_playlist_tracks
-import time
+from .paging import Page, fetch_all, retry
 from tqdm.asyncio import tqdm as atqdm
 from tqdm import tqdm
-import traceback
 import unicodedata
-import math
 
 from .type import spotify as t_spotify
 
@@ -123,66 +118,29 @@ async def tidal_search(spotify_track, rate_limiter, tidal_session: tidalapi.Sess
                 failure_cache.remove_match_failure(spotify_track['id'])
                 return track
     await rate_limiter.acquire()
-    album_search = await asyncio.to_thread( _search_for_track_in_album )
+    album_search = await retry( _search_for_track_in_album )
     if album_search:
         return album_search
     await rate_limiter.acquire()
-    track_search = await asyncio.to_thread( _search_for_standalone_track )
+    track_search = await retry( _search_for_standalone_track )
     if track_search:
         return track_search
 
     # if none of the search modes succeeded then store the track id to the failure cache
     failure_cache.cache_match_failure(spotify_track['id'])
 
-async def repeat_on_request_error(function, *args, remaining=5, **kwargs):
-    # utility to repeat calling the function up to 5 times if an exception is thrown
-    try:
-        return await function(*args, **kwargs)
-    except (tidalapi.exceptions.TooManyRequests, requests.exceptions.RequestException, spotipy.exceptions.SpotifyException) as e:
-        if remaining:
-            print(f"{str(e)} occurred, retrying {remaining} times")
-        else:
-            print(f"{str(e)} could not be recovered")
-
-        if isinstance(e, requests.exceptions.RequestException) and not e.response is None:
-            print(f"Response message: {e.response.text}")
-            print(f"Response headers: {e.response.headers}")
-
-        if not remaining:
-            print("Aborting sync")
-            print(f"The following arguments were provided:\n\n {str(args)}")
-            print(traceback.format_exc())
-            sys.exit(1)
-        sleep_schedule = {5: 1, 4:10, 3:60, 2:5*60, 1:10*60} # sleep variable length of time depending on retry number
-        time.sleep(sleep_schedule.get(remaining, 1))
-        return await repeat_on_request_error(function, *args, remaining=remaining-1, **kwargs)
-
-
-async def _fetch_all_from_spotify_in_chunks(fetch_function: Callable) -> List[dict]:
-    output = []
-    results = fetch_function(0)
-    output.extend([item['track'] for item in results['items'] if item['track'] is not None])
-
-    # Get all the remaining tracks in parallel
-    if results['next']:
-        offsets = [results['limit'] * n for n in range(1, math.ceil(results['total'] / results['limit']))]
-        extra_results = await atqdm.gather(
-            *[asyncio.to_thread(fetch_function, offset) for offset in offsets],
-            desc="Fetching additional data chunks"
-        )
-        for extra_result in extra_results:
-            output.extend([item['track'] for item in extra_result['items'] if item['track'] is not None])
-
-    return output
+def _spotify_track_page(result) -> Page:
+    """ Converts one page of Spotify playlist items / saved tracks into a Page of tracks """
+    return Page(items=[item['track'] for item in result['items'] if item['track'] is not None], total=result['total'], limit=result['limit'])
 
 
 async def get_tracks_from_spotify_playlist(spotify_session: spotipy.Spotify, spotify_playlist):
-    def _get_tracks_from_spotify_playlist(offset: int, playlist_id: str):
+    def _get_tracks_from_spotify_playlist(offset: int) -> Page:
         fields = "next,total,limit,items(track(name,album(name,artists),artists,track_number,duration_ms,id,external_ids(isrc))),type"
-        return spotify_session.playlist_tracks(playlist_id=playlist_id, fields=fields, offset=offset)
+        return _spotify_track_page(spotify_session.playlist_tracks(playlist_id=spotify_playlist["id"], fields=fields, offset=offset))
 
     print(f"Loading tracks from Spotify playlist '{spotify_playlist['name']}'")
-    items = await repeat_on_request_error( _fetch_all_from_spotify_in_chunks, lambda offset: _get_tracks_from_spotify_playlist(offset=offset, playlist_id=spotify_playlist["id"]))
+    items = await fetch_all(_get_tracks_from_spotify_playlist)
     track_filter = lambda item: item.get('type', 'track') == 'track' # type may be 'episode' also
     sanity_filter = lambda item: ('album' in item
                                   and 'name' in item['album']
@@ -279,7 +237,7 @@ async def search_new_tracks_on_tidal(tidal_session: tidalapi.Session, spotify_tr
     task_description = "Searching Tidal for {}/{} tracks in Spotify playlist '{}'".format(len(tracks_to_search), len(spotify_tracks), playlist_name)
     semaphore = asyncio.Semaphore(config.get('max_concurrency', 10))
     rate_limiter_task = asyncio.create_task(_run_rate_limiter(semaphore))
-    search_results = await atqdm.gather( *[ repeat_on_request_error(tidal_search, t, semaphore, tidal_session) for t in tracks_to_search ], desc=task_description )
+    search_results = await atqdm.gather( *[ tidal_search(t, semaphore, tidal_session) for t in tracks_to_search ], desc=task_description )
     rate_limiter_task.cancel()
 
     # Add the search results to the cache
@@ -332,8 +290,8 @@ async def sync_playlist(spotify_session: spotipy.Spotify, tidal_session: tidalap
 async def sync_favorites(spotify_session: spotipy.Spotify, tidal_session: tidalapi.Session, config: dict, username: str = None):
     """ sync user favorites to tidal """
     async def get_tracks_from_spotify_favorites() -> List[dict]:
-        _get_favorite_tracks = lambda offset: spotify_session.current_user_saved_tracks(offset=offset)    
-        tracks = await repeat_on_request_error( _fetch_all_from_spotify_in_chunks, _get_favorite_tracks)
+        _get_favorite_tracks = lambda offset: _spotify_track_page(spotify_session.current_user_saved_tracks(offset=offset))
+        tracks = await fetch_all(_get_favorite_tracks)
         tracks.reverse()
         return tracks
 
@@ -389,19 +347,14 @@ def get_user_playlist_mappings(spotify_session: spotipy.Spotify, tidal_session: 
 
 async def get_playlists_from_spotify(spotify_session: spotipy.Spotify, config):
     # get all the playlists from the Spotify account
-    playlists = []
-    print("Loading Spotify playlists")
-    first_results = spotify_session.current_user_playlists()
-    exclude_list = set([x.split(':')[-1] for x in config.get('excluded_playlists', [])])
-    playlists.extend([p for p in first_results['items']])
-    user_id = spotify_session.current_user()['id']
+    def _get_playlists_page(offset: int) -> Page:
+        result = spotify_session.current_user_playlists(offset=offset)
+        return Page(items=result['items'], total=result['total'], limit=result['limit'])
 
-    # get all the remaining playlists in parallel
-    if first_results['next']:
-        offsets = [ first_results['limit'] * n for n in range(1, math.ceil(first_results['total']/first_results['limit'])) ]
-        extra_results = await atqdm.gather( *[asyncio.to_thread(spotify_session.current_user_playlists, offset=offset) for offset in offsets ] )
-        for extra_result in extra_results:
-            playlists.extend([p for p in extra_result['items']])
+    print("Loading Spotify playlists")
+    exclude_list = set([x.split(':')[-1] for x in config.get('excluded_playlists', [])])
+    playlists = await fetch_all(_get_playlists_page)
+    user_id = spotify_session.current_user()['id']
 
     # filter out playlists that don't belong to us or are on the exclude list
     my_playlist_filter = lambda p: p and p['owner']['id'] == user_id
