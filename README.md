@@ -2,13 +2,13 @@ A command line tool for importing your Spotify playlists into Tidal. Due to vari
 
 Installation
 -----------
-Clone this git repository and then run:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), clone this git repository and then run from the project root:
 
 ```bash
-python3 -m pip install -e .
+uv sync
 ```
 
-Or let a setup script create a virtual environment for you, see [SETUP.md](SETUP.md).
+This creates a virtual environment in `.venv` with the exact dependency versions from `uv.lock`. Python itself is installed by uv if needed.
 
 Setup
 -----
@@ -20,26 +20,25 @@ Setup
 
 Usage
 ----
-To synchronize all of your Spotify playlists with your Tidal account run the following from the project root directory
-Windows ignores python module paths by default, but you can run them using `python3 -m spotify_to_tidal`
+To synchronize all of your Spotify playlists with your Tidal account run the following from the project root directory:
 
 ```bash
-spotify_to_tidal
+uv run spotify_to_tidal
 ```
 
 You can also just synchronize a specific playlist by doing the following:
 
 ```bash
-spotify_to_tidal --uri 1ABCDEqsABCD6EaABCDa0a # accepts playlist id or full playlist uri
+uv run spotify_to_tidal --uri 1ABCDEqsABCD6EaABCDa0a # accepts playlist id or full playlist uri
 ```
 
 or sync just your 'Liked Songs' with:
 
 ```bash
-spotify_to_tidal --sync-favorites
+uv run spotify_to_tidal --sync-favorites
 ```
 
-See config.example.yml for more configuration options, and `spotify_to_tidal --help` for more options.
+See config.example.yml for more configuration options, and `uv run spotify_to_tidal --help` for more options.
 
 Multiple profiles
 ----
@@ -53,7 +52,7 @@ Several people can share one checkout by giving each a profile with `--user NAME
 | Not-found report | `songs not found.txt` | `songs not found.NAME.txt` |
 
 ```bash
-spotify_to_tidal --user NAME
+uv run spotify_to_tidal --user NAME
 ```
 
 Generated files
@@ -69,5 +68,5 @@ Development
 Run the tests from the project root with:
 
 ```bash
-python3 -m pytest
+uv run pytest
 ```
