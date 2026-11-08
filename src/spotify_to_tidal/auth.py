@@ -28,10 +28,23 @@ def open_spotify_session(config) -> spotipy.Spotify:
 
     return spotipy.Spotify(oauth_manager=credentials_manager)
 
-def open_tidal_session(config = None) -> tidalapi.Session:
+def get_user_specific_filename(base_filename: str, username: str = None) -> str:
+    """Generate user-specific filename with .username suffix before extension"""
+    if username is None:
+        return base_filename
+    
+    if '.' in base_filename:
+        name, ext = base_filename.rsplit('.', 1)
+        return f"{name}.{username}.{ext}"
+    else:
+        return f"{base_filename}.{username}"
+
+def open_tidal_session(config = None, username: str = None) -> tidalapi.Session:
+    session_file = get_user_specific_filename('.session.yml', username)
+    
     try:
-        with open('.session.yml', 'r') as session_file:
-            previous_session = yaml.safe_load(session_file)
+        with open(session_file, 'r') as f:
+            previous_session = yaml.safe_load(f)
     except OSError:
         previous_session = None
 
@@ -55,11 +68,9 @@ def open_tidal_session(config = None) -> tidalapi.Session:
         url = 'https://' + url
     webbrowser.open(url)
     future.result()
-    with open('.session.yml', 'w') as f:
+    with open(session_file, 'w') as f:
         yaml.dump( {'session_id': session.session_id,
                    'token_type': session.token_type,
                    'access_token': session.access_token,
                    'refresh_token': session.refresh_token}, f )
     return session
-
-

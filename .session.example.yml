@@ -1,0 +1,6 @@
+# Tidal login, written automatically after the first browser login.
+# Copy to .session.yml (default profile) or .session.NAME.yml (--user NAME) only to reuse an existing login.
+session_id: your_tidal_session_id
+token_type: Bearer
+access_token: your_tidal_access_token
+refresh_token: your_tidal_refresh_token

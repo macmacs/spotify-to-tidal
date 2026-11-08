@@ -4,14 +4,26 @@ from sqlalchemy import Table, Column, String, DateTime, MetaData, insert, select
 from typing import Dict, List, Sequence, Set, Mapping
 
 
+def get_user_specific_filename(base_filename: str, username: str = None) -> str:
+    """Generate user-specific filename with .username suffix before extension"""
+    if username is None:
+        return base_filename
+    
+    if '.' in base_filename:
+        name, ext = base_filename.rsplit('.', 1)
+        return f"{name}.{username}.{ext}"
+    else:
+        return f"{base_filename}.{username}"
+
 class MatchFailureDatabase:
     """ 
     sqlite database of match failures which persists between runs
     this can be used concurrently between multiple processes
     """
 
-    def __init__(self, filename='.cache.db'):
-        self.engine = sqlalchemy.create_engine(f"sqlite:///{filename}")
+    def __init__(self, filename='.cache.db', username: str = None):
+        db_filename = get_user_specific_filename(filename, username)
+        self.engine = sqlalchemy.create_engine(f"sqlite:///{db_filename}")
         meta = MetaData()
         self.match_failures = Table('match_failures', meta,
                                     Column('track_id', String,
@@ -79,6 +91,12 @@ class TrackMatchCache:
         self.data[mapping[0]] = mapping[1]
 
 
-# Main singleton instance
-failure_cache = MatchFailureDatabase()
+# Global cache instances - will be initialized with user context
+failure_cache = MatchFailureDatabase()  # Initialize with default for backward compatibility
 track_match_cache = TrackMatchCache()
+
+def initialize_caches(username: str = None):
+    """Initialize global cache instances with user-specific context"""
+    global failure_cache, track_match_cache
+    failure_cache = MatchFailureDatabase(username=username)
+    track_match_cache = TrackMatchCache()  # Reset the in-memory cache for each user session

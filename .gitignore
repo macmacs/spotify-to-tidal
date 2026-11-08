@@ -1,9 +1,13 @@
 # Config and cache files
 config.yml
 config.yaml
+config.*.yml
+!config.example.yml
 .cache*
 .session.yml
-songs not found.txt
+.session.*.yml
+!.session.example.yml
+songs not found*.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
