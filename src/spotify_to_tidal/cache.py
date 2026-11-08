@@ -82,21 +82,11 @@ class TrackMatchCache:
     Non-persistent mapping of spotify ids -> tidal_ids
     This should NOT be accessed concurrently from multiple processes
     """
-    data: Dict[str, int] = {}
+    def __init__(self):
+        self.data: Dict[str, int] = {}
 
     def get(self, track_id: str) -> int | None:
         return self.data.get(track_id, None)
 
     def insert(self, mapping: tuple[str, int]):
         self.data[mapping[0]] = mapping[1]
-
-
-# Global cache instances - will be initialized with user context
-failure_cache = MatchFailureDatabase()  # Initialize with default for backward compatibility
-track_match_cache = TrackMatchCache()
-
-def initialize_caches(username: str = None):
-    """Initialize global cache instances with user-specific context"""
-    global failure_cache, track_match_cache
-    failure_cache = MatchFailureDatabase(username=username)
-    track_match_cache = TrackMatchCache()  # Reset the in-memory cache for each user session
